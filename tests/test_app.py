@@ -67,6 +67,14 @@ class TestConfigLoading:
         app = NTSRadioApp()
         assert app._config["default_channel"] == 1
 
+    def test_config_out_of_range_channel_uses_default(self, monkeypatch):
+        from nts.app import NTSRadioApp
+
+        monkeypatch.setenv("NTS_DEFAULT_CHANNEL", "3")
+
+        app = NTSRadioApp()
+        assert app._config["default_channel"] == 1
+
 
 class TestStateMachine:
     """Tests for state transitions."""

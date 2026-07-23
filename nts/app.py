@@ -40,6 +40,8 @@ DEFAULT_CONFIG = {
 LIVE_REFRESH_INTERVAL = 15
 DISPLAY_REFRESH_INTERVAL = 60  # For progress bar updates
 
+LIVE_CHANNELS = (1, 2)
+
 
 class AppState(Enum):
     """Application screen states."""
@@ -90,23 +92,25 @@ class NTSRadioApp:
         """
         config = DEFAULT_CONFIG.copy()
 
-        if os.environ.get("NTS_DEFAULT_CHANNEL"):
-            try:
-                config["default_channel"] = int(os.environ["NTS_DEFAULT_CHANNEL"])
-            except ValueError:
-                pass
-        if os.environ.get("NTS_DISPLAY_BRIGHTNESS"):
-            try:
-                config["display_brightness"] = int(os.environ["NTS_DISPLAY_BRIGHTNESS"])
-            except ValueError:
-                pass
-        if os.environ.get("NTS_BUTTON_DEBOUNCE_MS"):
-            try:
-                config["button_debounce_ms"] = int(os.environ["NTS_BUTTON_DEBOUNCE_MS"])
-            except ValueError:
-                pass
+        env_keys = {
+            "NTS_DEFAULT_CHANNEL": "default_channel",
+            "NTS_DISPLAY_BRIGHTNESS": "display_brightness",
+            "NTS_BUTTON_DEBOUNCE_MS": "button_debounce_ms",
+        }
+        for env_key, config_key in env_keys.items():
+            value = os.environ.get(env_key)
+            if value:
+                try:
+                    config[config_key] = int(value)
+                except ValueError:
+                    logger.warning("Ignoring invalid %s=%r", env_key, value)
 
-        logger.info("Config loaded from environment variables")
+        if config["default_channel"] not in LIVE_CHANNELS:
+            logger.warning(
+                "Invalid default channel %r, using 1", config["default_channel"]
+            )
+            config["default_channel"] = 1
+
         return config
 
     # ── State machine ────────────────────────────────────────
