@@ -7,7 +7,6 @@ FROM balenalib/%%BALENA_MACHINE_NAME%%-debian-python:3.11-bookworm-build AS buil
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 RUN install_packages \
-    libcairo2-dev \
     libffi-dev \
     pkg-config \
     libjpeg62-turbo-dev \
@@ -24,7 +23,6 @@ FROM balenalib/%%BALENA_MACHINE_NAME%%-debian-python:3.11-bookworm-run
 RUN install_packages \
     mpv \
     fonts-dejavu-core \
-    libcairo2 \
     libffi8 \
     libjpeg62-turbo \
     zlib1g \

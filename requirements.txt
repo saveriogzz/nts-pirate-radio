@@ -3,4 +3,3 @@ Pillow>=9.0.0
 st7789>=0.0.4
 rpi-lgpio>=0.6
 spidev>=3.5
-cairosvg>=2.7.0

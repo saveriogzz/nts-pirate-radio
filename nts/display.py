@@ -2,7 +2,7 @@
 
 Renders 240x240 frames using PIL and pushes them to the
 ST7789 SPI display. Uses a dark theme with NTS orange accents.
-Bundled assets: NTS logo SVG and 16 infinite mixtape icons.
+Bundled assets: 16 infinite mixtape icons.
 """
 
 import logging
@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 # Asset paths — resolved relative to this file's parent directory
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 _MIXTAPE_ICONS_DIR = _ASSETS_DIR / "mixtapes"
-_LOGO_SVG_PATH = _ASSETS_DIR / "NTS_Radio_logo.svg"
 
 # Display dimensions
 WIDTH = 240
@@ -71,8 +70,6 @@ class Display:
             self._font_small = ImageFont.load_default()
             self._font_header = ImageFont.load_default()
 
-        # Load bundled assets
-        self._nts_logo = self._load_logo()
         self._mixtape_icons: dict[str, Image.Image] = self._load_mixtape_icons()
 
         self._init_hardware()
@@ -103,48 +100,6 @@ class Display:
         except Exception:
             logger.exception("Failed to initialize display")
             self._display = None
-
-    def _load_logo(self) -> Optional[Image.Image]:
-        """Load and rasterize the NTS logo SVG to a white-on-black image."""
-        if not _LOGO_SVG_PATH.exists():
-            logger.warning("NTS logo not found at %s", _LOGO_SVG_PATH)
-            return None
-        try:
-            import cairosvg
-            png_data = cairosvg.svg2png(
-                url=str(_LOGO_SVG_PATH), output_width=120, output_height=120,
-            )
-            import io
-            logo = Image.open(io.BytesIO(png_data)).convert("RGBA")
-            # The SVG is black paths on white — invert for dark theme:
-            # make white pixels black, black pixels white
-            r, g, b, a = logo.split()
-            from PIL import ImageOps
-            r = ImageOps.invert(r)
-            g = ImageOps.invert(g)
-            b = ImageOps.invert(b)
-            logo = Image.merge("RGBA", (r, g, b, a))
-            logger.info("NTS logo loaded (cairosvg)")
-            return logo
-        except ImportError:
-            logger.info("cairosvg not available, using PIL SVG fallback")
-        except Exception:
-            logger.exception("Failed to rasterize logo with cairosvg")
-
-        # Fallback: parse the SVG path manually is too complex,
-        # so create a simple text-based logo
-        try:
-            logo = Image.new("RGBA", (120, 120), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(logo)
-            font = ImageFont.truetype(FONT_BOLD, 48)
-            bbox = draw.textbbox((0, 0), "NTS", font=font)
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            x = (120 - tw) // 2
-            y = (120 - th) // 2 - bbox[1]
-            draw.text((x, y), "NTS", font=font, fill=WHITE)
-            return logo
-        except Exception:
-            return None
 
     def _load_mixtape_icons(self) -> dict[str, Image.Image]:
         """Load all bundled mixtape icons, keyed by alias."""
@@ -320,21 +275,11 @@ class Display:
 
         if artwork is not None:
             img.paste(artwork, (artwork_x, artwork_y))
-        elif self._nts_logo is not None:
-            # Use bundled NTS logo as placeholder
-            img.paste(self._nts_logo, (artwork_x, artwork_y), self._nts_logo)
         else:
-            # Last-resort placeholder
             draw.rectangle(
                 [(artwork_x, artwork_y), (artwork_x + artwork_size, artwork_y + artwork_size)],
                 fill=DARK_GRAY,
                 outline=MID_GRAY,
-            )
-            draw.text(
-                (artwork_x + 30, artwork_y + 50),
-                "NTS",
-                font=self._font_large,
-                fill=MID_GRAY,
             )
 
         # Show title
