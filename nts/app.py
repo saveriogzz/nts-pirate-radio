@@ -237,8 +237,13 @@ class NTSRadioApp:
             if artwork_url:
                 self._current_artwork = self._artwork_cache.get(artwork_url)
         self._display_dirty = True
+
+        def _bg_switch():
+            self._play_current()
+            self._fetch_and_update_live(force_refresh=True)
+
         threading.Thread(
-            target=self._play_current,
+            target=_bg_switch,
             daemon=True,
             name="channel-switch",
         ).start()
