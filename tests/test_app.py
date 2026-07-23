@@ -278,3 +278,112 @@ class TestReturnFromMenu:
 
         app._on_button_y()  # close
         assert app._get_state() == AppState.MIXTAPE
+
+
+class TestEventHandling:
+    """Tests for the event queue dispatch."""
+
+    def test_button_event_dispatches_to_handler(self):
+        from nts.app import ButtonPressed
+        from nts.buttons import BUTTON_X
+
+        app = _make_app()
+        app._handle_event(ButtonPressed(BUTTON_X))
+        app._player.toggle_pause.assert_called_once()
+
+    def test_live_info_updates_current_channel(self):
+        from nts.app import LiveInfoFetched
+
+        app = _make_app()
+        app._display_dirty = False
+        info = {"channel_name": "NTS 1", "title": "New Show", "artwork_url": None}
+
+        app._handle_event(LiveInfoFetched({1: info, 2: {"title": "Other"}}))
+
+        assert app._channel_info == info
+        assert app._display_dirty
+        assert not app._live_fetch_pending
+
+    def test_live_info_requests_artwork(self):
+        from nts.app import LiveInfoFetched
+
+        app = _make_app()
+        app._request_artwork = MagicMock()
+        info = {
+            "channel_name": "NTS 1",
+            "title": "New Show",
+            "artwork_url": "https://media.ntslive.co.uk/art.jpg",
+        }
+
+        app._handle_event(LiveInfoFetched({1: info}))
+
+        app._request_artwork.assert_called_once_with("https://media.ntslive.co.uk/art.jpg")
+
+    def test_failed_live_fetch_clears_pending_flag(self):
+        from nts.app import LiveInfoFetched
+
+        app = _make_app()
+        app._live_fetch_pending = True
+        app._handle_event(LiveInfoFetched({}))
+        assert not app._live_fetch_pending
+
+    def test_mixtapes_fetched_starts_playback_in_mixtape_state(self):
+        from nts.app import AppState, MixtapesFetched
+
+        app = _make_app()
+        app._set_state(AppState.MIXTAPE)
+
+        app._handle_event(MixtapesFetched(SAMPLE_MIXTAPES_RESPONSE["results"]))
+
+        assert app._mixtapes == SAMPLE_MIXTAPES_RESPONSE["results"]
+        app._player.play.assert_called()
+
+    def test_mixtapes_fetched_does_not_play_in_other_states(self):
+        from nts.app import MixtapesFetched
+
+        app = _make_app()
+        app._handle_event(MixtapesFetched(SAMPLE_MIXTAPES_RESPONSE["results"]))
+
+        assert app._mixtapes == SAMPLE_MIXTAPES_RESPONSE["results"]
+        app._player.play.assert_not_called()
+
+    def test_artwork_fetched_populates_cache(self):
+        from nts.app import ArtworkFetched
+
+        app = _make_app()
+        img = MagicMock()
+        app._artwork_pending.add("https://media.ntslive.co.uk/art.jpg")
+
+        app._handle_event(ArtworkFetched("https://media.ntslive.co.uk/art.jpg", img))
+
+        assert app._artwork_cache["https://media.ntslive.co.uk/art.jpg"] is img
+        assert "https://media.ntslive.co.uk/art.jpg" not in app._artwork_pending
+
+    def test_failed_artwork_not_cached(self):
+        from nts.app import ArtworkFetched
+
+        app = _make_app()
+        app._artwork_pending.add("https://media.ntslive.co.uk/art.jpg")
+
+        app._handle_event(ArtworkFetched("https://media.ntslive.co.uk/art.jpg", None))
+
+        assert "https://media.ntslive.co.uk/art.jpg" not in app._artwork_cache
+        assert "https://media.ntslive.co.uk/art.jpg" not in app._artwork_pending
+
+    def test_artwork_request_deduplicates(self):
+        app = _make_app()
+        app._spawn_worker = MagicMock()
+
+        app._request_artwork("https://media.ntslive.co.uk/art.jpg")
+        app._request_artwork("https://media.ntslive.co.uk/art.jpg")
+
+        assert app._spawn_worker.call_count == 1
+
+    def test_live_refresh_request_deduplicates(self):
+        app = _make_app()
+        app._spawn_worker = MagicMock()
+
+        app._request_live_refresh()
+        app._request_live_refresh()
+
+        assert app._spawn_worker.call_count == 1
