@@ -1,21 +1,23 @@
-# NTS Radio for Raspberry Pi Zero 2W
+# NTS Radio for Raspberry Pi
 
-Stream NTS Radio (live channels + infinite mixtapes) on a Pi Zero 2W with a Pimoroni Pirate Audio Line-out HAT. Deployed via Balena Cloud.
+Stream NTS Radio (live channels + infinite mixtapes) on a Raspberry Pi with a Pimoroni Pirate Audio Line-out HAT. Deployed via Balena Cloud.
+
+[![balena deploy button](https://www.balena.io/deploy.svg)](https://dashboard.balena-cloud.com/deploy?repoUrl=https://github.com/saveriogzz/nts-balena)
 
 ## Hardware
 
-- Raspberry Pi Zero 2W
+- Raspberry Pi with a 40-pin header (Zero 2W recommended; Pi 2/3/4/5 also supported)
 - [Pimoroni Pirate Audio Line-out](https://shop.pimoroni.com/products/pirate-audio-line-out) — ST7789 240x240 display, 4 buttons, I2S DAC
 
-## Deploy with Balena Cloud
+## Deploy
 
-### 1. Create a fleet
+### One-click (recommended)
 
-Create a new fleet on [Balena Cloud](https://dashboard.balena-cloud.com) for device type **Raspberry Pi Zero 2 W**.
+Click the **Deploy with balena** button above. It creates a fleet with everything preconfigured from `balena.yml` — hardware config (SPI, I2S DAC overlay, GPU memory) and default environment variables. No dashboard setup needed: add a device, flash the image, and the radio starts playing NTS 1 on boot.
 
-The `balena.yml` already declares all the hardware config (SPI, I2S DAC overlay, GPU memory) and default environment variables — no manual dashboard setup needed.
+### Manual (balena CLI)
 
-### 2. Push
+Create a fleet on [Balena Cloud](https://dashboard.balena-cloud.com) (device type **Raspberry Pi Zero 2 W** or any supported model), then:
 
 ```bash
 balena login
