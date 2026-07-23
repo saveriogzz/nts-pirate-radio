@@ -100,6 +100,6 @@ For running on a Pi directly without Balena, `install.sh` and `nts-radio.service
 
 ## Disclaimer
 
-This is an unofficial project, not affiliated with or endorsed by NTS Radio. All audio content is streamed from [nts.live](https://www.nts.live) — go support them. The logo is original artwork for this project.
+This is an unofficial project, not affiliated with or endorsed by NTS Radio. All audio content is streamed from [nts.live](https://www.nts.live) — go support them. The [NTS logo](https://commons.wikimedia.org/wiki/File:NTS_Radio_logo.svg) is a public-domain text logo; the NTS name and mark belong to NTS Radio and are used here for identification only.
 
 Licensed under the terms in [LICENSE](LICENSE).
