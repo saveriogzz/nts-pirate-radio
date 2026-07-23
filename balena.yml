@@ -12,9 +12,9 @@ data:
     - "raspberrypi3"
     - "raspberrypi3-64"
   applicationConfigVariables:
-    - BALENA_HOST_CONFIG_dtparam: '"spi=on","audio=off"'
-    - BALENA_HOST_CONFIG_dtoverlay: '"hifiberry-dac"'
-    - BALENA_HOST_CONFIG_gpu_mem: 16
+    - RESIN_HOST_CONFIG_dtparam: '"i2c_arm=on","spi=on","audio=off"'
+    - RESIN_HOST_CONFIG_dtoverlay: '"vc4-kms-v3d,cma-320","hifiberry-dac"'
+    - RESIN_HOST_CONFIG_gpio: '"25=op,dh"'
   applicationEnvironmentVariables:
     - NTS_DEFAULT_CHANNEL: 1
     - NTS_DISPLAY_BRIGHTNESS: 80
