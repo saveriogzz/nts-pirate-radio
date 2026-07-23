@@ -4,18 +4,25 @@ Stream NTS Radio (live channels + infinite mixtapes) on a Raspberry Pi with a Pi
 
 [![balena deploy button](https://www.balena.io/deploy.svg)](https://dashboard.balena-cloud.com/deploy?repoUrl=https://github.com/saveriogzz/nts-balena)
 
-## Hardware
+## What you need
 
-- Raspberry Pi with a 40-pin header (Zero 2W recommended; Pi 2/3/4/5 also supported)
-- [Pimoroni Pirate Audio Line-out](https://shop.pimoroni.com/products/pirate-audio-line-out) — ST7789 240x240 display, 4 buttons, I2S DAC
+- A Raspberry Pi with a 40-pin header — Zero 2W recommended; Pi 2/3/4/5 also supported
+- [Pimoroni Pirate Audio Line-out](https://shop.pimoroni.com/products/pirate-audio-line-out) — ST7789 240x240 display, 4 buttons, I2S DAC (other Pirate Audio variants with the same DAC work too)
+- A microSD card (4 GB or larger) and power supply
+- A free [balenaCloud](https://dashboard.balena-cloud.com/signup) account (up to 10 devices)
 
-## Deploy
+**Assembly:** seat the Pirate Audio HAT on the Pi's 40-pin header before powering on. No soldering or wiring — the HAT is the only hardware configuration there is.
 
-### One-click (recommended)
+## Getting started (one-click)
 
-Click the **Deploy with balena** button above. It creates a fleet with everything preconfigured from `balena.yml` — hardware config (SPI, I2S DAC overlay, GPU memory) and default environment variables. No dashboard setup needed: add a device, flash the image, and the radio starts playing NTS 1 on boot.
+1. Click the **Deploy with balena** button above and sign in to balenaCloud.
+2. Review the fleet settings and click **Create and deploy**. Everything is preconfigured from `balena.yml` — SPI, the I2S DAC overlay, and default environment variables. No dashboard setup needed.
+3. Click **Add device**, enter your Wi-Fi credentials, and download the OS image.
+4. Flash the image to the SD card with [balenaEtcher](https://etcher.balena.io/), insert it, and power on.
 
-### Manual (balena CLI)
+On first boot the device downloads the application (a few minutes depending on your connection), the display shows **NTS RADIO — Starting up...**, and channel 1 starts playing automatically.
+
+### Manual deploy (balena CLI)
 
 Create a fleet on [Balena Cloud](https://dashboard.balena-cloud.com) (device type **Raspberry Pi Zero 2 W** or any supported model), then:
 
@@ -24,22 +31,12 @@ balena login
 balena push <fleet-name>
 ```
 
-### Environment variables
-
-These are set as fleet defaults in `balena.yml` and can be overridden per-device in the dashboard:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NTS_DEFAULT_CHANNEL` | `1` | Start on channel 1 or 2 |
-| `NTS_DISPLAY_BRIGHTNESS` | `80` | Backlight brightness 0-100 |
-| `NTS_BUTTON_DEBOUNCE_MS` | `200` | Button debounce in ms |
-
 ## Controls
 
-| Button | Normal | Menu |
+| Button | Playing | Menu |
 |--------|-------------|-----------|
-| A (top-left) | Prev channel | Scroll up |
-| B (bottom-left) | Next channel | Scroll down |
+| A (top-left) | Previous channel/mixtape | Scroll up |
+| B (bottom-left) | Next channel/mixtape | Scroll down |
 | X (top-right) | Play/Pause | Select |
 | Y (bottom-right) | Open menu | Back |
 
@@ -47,7 +44,27 @@ These are set as fleet defaults in `balena.yml` and can be overridden per-device
 
 - **Live** — NTS 1 / NTS 2 with show artwork, title, and progress bar
 - **Mixtapes** — Browse and play all NTS infinite mixtapes
-- **Menu** — Switch between modes, adjust brightness
+- **Menu** — Switch between live radio and mixtapes
+
+## Configuration
+
+All settings are optional. These are set as fleet defaults in `balena.yml` and can be overridden per-fleet or per-device in the balenaCloud dashboard (Environment Variables):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NTS_DEFAULT_CHANNEL` | `1` | Start on channel 1 or 2 |
+| `NTS_DISPLAY_BRIGHTNESS` | `80` | Backlight brightness 0-100 |
+| `NTS_BUTTON_DEBOUNCE_MS` | `200` | Button debounce in ms |
+
+The hardware configuration (SPI, `hifiberry-dac` device tree overlay, onboard audio off) is applied automatically via the fleet's configuration variables — you'll find it under **Fleet → Configuration** in the dashboard.
+
+## Troubleshooting
+
+- **No audio** — check the HAT is fully seated on the header. Then check **Fleet → Configuration** in the dashboard includes the `hifiberry-dac` overlay (set automatically when deploying with the button); the device reboots when configuration changes.
+- **Blank display** — also a seating issue in most cases; the display needs SPI, which the same fleet configuration enables.
+- **Stuck on "Loading..."** — the device has no route to `www.nts.live`. Check the network; the app needs outbound HTTPS. Audio can play before metadata appears — that's normal on a slow connection.
+- **Buttons do nothing** — the app expects the Pirate Audio buttons on BCM pins 5, 6, 16, 24. Other button HATs won't map.
+- Device logs are available in the balenaCloud dashboard for anything else.
 
 ## Project structure
 
@@ -58,13 +75,28 @@ nts-radio/
 │   ├── player.py      # mpv wrapper with IPC socket control
 │   ├── display.py     # ST7789 240x240 display rendering
 │   ├── buttons.py     # GPIO button handler with debounce
-│   └── app.py         # Main app state machine
+│   └── app.py         # Main app: single-threaded event loop
+├── assets/mixtapes/   # Bundled mixtape icons
+├── tests/             # Unit tests (hardware mocked, run anywhere)
 ├── Dockerfile.template
 ├── docker-compose.yml
 ├── balena.yml
 └── requirements.txt
 ```
 
-## Local development (without Balena)
+## Local development
 
-For testing on a Pi directly, the `install.sh` script and `nts-radio.service` are also included as an alternative to the Balena deployment.
+Tests run on any machine — the GPIO, display, and mpv layers are mocked:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+For running on a Pi directly without Balena, `install.sh` and `nts-radio.service` set it up as a systemd service on Raspberry Pi OS.
+
+## Disclaimer
+
+This is an unofficial project, not affiliated with or endorsed by NTS Radio. All audio content is streamed from [nts.live](https://www.nts.live) — go support them. The logo is original artwork for this project.
+
+Licensed under the terms in [LICENSE](LICENSE).
