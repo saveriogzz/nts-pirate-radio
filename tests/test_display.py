@@ -36,13 +36,6 @@ class TestDisplayInit:
 class TestAssetLoading:
     """Tests for bundled asset loading."""
 
-    def test_load_logo_returns_image_or_none(self, display):
-        # On CI/dev machines without cairosvg, may fall back to text logo
-        logo = display._nts_logo
-        if logo is not None:
-            assert isinstance(logo, Image.Image)
-            assert logo.size == (120, 120)
-
     def test_load_mixtape_icons(self, display):
         icons = display._mixtape_icons
         assert isinstance(icons, dict)
@@ -133,10 +126,7 @@ class TestRenderLive:
         px = captured[0].getpixel((WIDTH // 2, 28 + 60))
         assert px == (255, 0, 0)
 
-    def test_render_live_uses_logo_as_placeholder(self, display):
-        if display._nts_logo is None:
-            pytest.skip("No logo available")
-
+    def test_render_live_no_artwork_shows_placeholder(self, display):
         channel_info = {
             "channel_name": "NTS 1",
             "title": "Test",
@@ -151,12 +141,12 @@ class TestRenderLive:
         display.render_live(channel_info, is_playing=False, artwork=None)
 
         assert len(captured) == 1
-        # Artwork area shouldn't be fully black (logo is drawn)
+        # Artwork area should have the gray placeholder rectangle
         artwork_x = (WIDTH - 120) // 2
         region = captured[0].crop((artwork_x, 28, artwork_x + 120, 28 + 120))
         pixels = list(region.getdata())
         non_black = [p for p in pixels if p != (0, 0, 0)]
-        assert len(non_black) > 0, "Logo should produce non-black pixels"
+        assert len(non_black) > 0, "Placeholder should produce non-black pixels"
 
 
 class TestRenderMixtape:
