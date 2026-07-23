@@ -38,7 +38,7 @@ DEFAULT_CONFIG = {
 
 # Refresh intervals (seconds)
 LIVE_REFRESH_INTERVAL = 15
-DISPLAY_REFRESH_INTERVAL = 5  # For progress bar updates
+DISPLAY_REFRESH_INTERVAL = 60  # For progress bar updates
 
 
 class AppState(Enum):
