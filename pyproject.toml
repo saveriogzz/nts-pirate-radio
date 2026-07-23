@@ -27,6 +27,12 @@ dev = [
 # Not a distributable package: uv sync installs dependencies only
 package = false
 
+# Lock against public PyPI regardless of any machine-level index config
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
 [tool.pytest.ini_options]
 filterwarnings = [
     "ignore::DeprecationWarning:PIL",
