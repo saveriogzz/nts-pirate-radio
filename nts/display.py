@@ -90,7 +90,7 @@ class Display:
                 width=WIDTH,
                 height=HEIGHT,
                 spi_speed_hz=SPI_SPEED_MHZ * 1000000,
-                rotation=0,
+                rotation=270,
                 offset_left=0,
                 offset_top=0,
             )
