@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 """NTS Radio main application.
 
-State machine that ties together the API client, mpv player,
-ST7789 display, and GPIO buttons into a cohesive radio experience.
+Single-threaded event loop that ties together the API client, mpv player,
+ST7789 display, and GPIO buttons.
+
+Architecture: all application state is owned by the event loop thread and
+is only ever mutated there. Other threads (GPIO callbacks, network fetch
+workers) communicate exclusively by putting events on a queue. Network
+I/O runs in short-lived worker threads that post their results back as
+events, so the loop never blocks on the network.
 """
 
 import logging
 import os
+import queue
 import signal
-
 import sys
 import threading
 import time
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional
 
@@ -40,12 +47,42 @@ DEFAULT_CONFIG = {
 LIVE_REFRESH_INTERVAL = 15
 DISPLAY_REFRESH_INTERVAL = 60  # For progress bar updates
 
+# Event loop tick (seconds) — max latency for timers when no events arrive
+TICK_INTERVAL = 0.1
+
+LIVE_CHANNELS = (1, 2)
+
 
 class AppState(Enum):
     """Application screen states."""
     LIVE = auto()
     MIXTAPE = auto()
     MENU = auto()
+
+
+# ── Events ───────────────────────────────────────────────────
+# Everything that happens off the loop thread arrives as one of these.
+
+@dataclass(frozen=True)
+class ButtonPressed:
+    button: int
+
+
+@dataclass(frozen=True)
+class LiveInfoFetched:
+    """Per-channel info from a live-data fetch; empty dict on failure."""
+    infos: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MixtapesFetched:
+    items: list = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ArtworkFetched:
+    url: str
+    image: Optional[object] = None
 
 
 class NTSRadioApp:
@@ -57,19 +94,27 @@ class NTSRadioApp:
     def __init__(self):
         self._config = self._load_config()
         self._state = AppState.LIVE
-        self._lock = threading.Lock()
+        self._state_before_menu = AppState.LIVE
         self._running = False
+
+        # Event queue — the only channel into the loop thread
+        self._events: "queue.Queue" = queue.Queue()
 
         # Current selections
         self._current_channel = self._config.get("default_channel", 1)
         self._current_mixtape_idx = 0
         self._menu_selection = 0
 
-        # Cached data
+        # Cached data (owned by the loop thread)
         self._channel_info: Optional[dict] = None
+        self._live_infos: dict[int, dict] = {}
         self._mixtapes: list = []
         self._artwork_cache: dict[str, "Image.Image"] = {}
-        self._current_artwork = None
+
+        # In-flight fetch guards (loop thread only)
+        self._live_fetch_pending = False
+        self._mixtapes_fetch_pending = False
+        self._artwork_pending: set[str] = set()
 
         # Components (initialized in start())
         self._api: Optional[NTSClient] = None
@@ -79,6 +124,13 @@ class NTSRadioApp:
 
         # Track what changed for display updates
         self._display_dirty = True
+
+        self._button_actions = {
+            BUTTON_A: self._on_button_a,
+            BUTTON_B: self._on_button_b,
+            BUTTON_X: self._on_button_x,
+            BUTTON_Y: self._on_button_y,
+        }
 
     def _load_config(self) -> dict:
         """Load configuration from environment variables (balena device vars).
@@ -90,58 +142,73 @@ class NTSRadioApp:
         """
         config = DEFAULT_CONFIG.copy()
 
-        if os.environ.get("NTS_DEFAULT_CHANNEL"):
-            try:
-                config["default_channel"] = int(os.environ["NTS_DEFAULT_CHANNEL"])
-            except ValueError:
-                pass
-        if os.environ.get("NTS_DISPLAY_BRIGHTNESS"):
-            try:
-                config["display_brightness"] = int(os.environ["NTS_DISPLAY_BRIGHTNESS"])
-            except ValueError:
-                pass
-        if os.environ.get("NTS_BUTTON_DEBOUNCE_MS"):
-            try:
-                config["button_debounce_ms"] = int(os.environ["NTS_BUTTON_DEBOUNCE_MS"])
-            except ValueError:
-                pass
+        env_keys = {
+            "NTS_DEFAULT_CHANNEL": "default_channel",
+            "NTS_DISPLAY_BRIGHTNESS": "display_brightness",
+            "NTS_BUTTON_DEBOUNCE_MS": "button_debounce_ms",
+        }
+        for env_key, config_key in env_keys.items():
+            value = os.environ.get(env_key)
+            if value:
+                try:
+                    config[config_key] = int(value)
+                except ValueError:
+                    logger.warning("Ignoring invalid %s=%r", env_key, value)
 
-        logger.info("Config loaded from environment variables")
+        if config["default_channel"] not in LIVE_CHANNELS:
+            logger.warning(
+                "Invalid default channel %r, using 1", config["default_channel"]
+            )
+            config["default_channel"] = 1
+
         return config
 
     # ── State machine ────────────────────────────────────────
 
     def _set_state(self, new_state: AppState):
-        """Thread-safe state transition."""
-        with self._lock:
-            old_state = self._state
-            self._state = new_state
-            self._display_dirty = True
-            logger.info("State: %s -> %s", old_state.name, new_state.name)
+        """State transition (loop thread only)."""
+        old_state = self._state
+        self._state = new_state
+        self._display_dirty = True
+        logger.info("State: %s -> %s", old_state.name, new_state.name)
 
     def _get_state(self) -> AppState:
-        """Thread-safe state read."""
-        with self._lock:
-            return self._state
+        return self._state
+
+    # ── Event handling ───────────────────────────────────────
+
+    def _handle_event(self, event):
+        """Dispatch a single event (loop thread only)."""
+        if isinstance(event, ButtonPressed):
+            action = self._button_actions.get(event.button)
+            if action:
+                action()
+        elif isinstance(event, LiveInfoFetched):
+            self._on_live_info(event.infos)
+        elif isinstance(event, MixtapesFetched):
+            self._on_mixtapes(event.items)
+        elif isinstance(event, ArtworkFetched):
+            self._on_artwork(event.url, event.image)
+        else:
+            logger.warning("Unknown event: %r", event)
 
     # ── Button handlers ──────────────────────────────────────
+    # These contain the actual logic and run on the loop thread;
+    # the GPIO thread only enqueues ButtonPressed events.
 
     def _on_button_a(self):
         """Button A (top-left): Previous channel/item or scroll up."""
         state = self._get_state()
 
         if state == AppState.LIVE:
-            # Toggle between channel 1 and 2
-            self._current_channel = 1 if self._current_channel == 2 else 2
-            self._switch_live_channel()
+            self._toggle_live_channel()
 
         elif state == AppState.MIXTAPE:
             # Previous mixtape
             if self._mixtapes:
-                self._current_mixtape_idx = (
+                self._play_mixtape(
                     (self._current_mixtape_idx - 1) % len(self._mixtapes)
                 )
-                self._play_mixtape(self._current_mixtape_idx)
 
         elif state == AppState.MENU:
             # Scroll up in menu
@@ -153,15 +220,13 @@ class NTSRadioApp:
         state = self._get_state()
 
         if state == AppState.LIVE:
-            self._current_channel = 1 if self._current_channel == 2 else 2
-            self._switch_live_channel()
+            self._toggle_live_channel()
 
         elif state == AppState.MIXTAPE:
             if self._mixtapes:
-                self._current_mixtape_idx = (
+                self._play_mixtape(
                     (self._current_mixtape_idx + 1) % len(self._mixtapes)
                 )
-                self._play_mixtape(self._current_mixtape_idx)
 
         elif state == AppState.MENU:
             self._menu_selection = (self._menu_selection + 1) % len(self.MENU_ITEMS)
@@ -183,11 +248,9 @@ class NTSRadioApp:
         state = self._get_state()
 
         if state == AppState.MENU:
-            # Go back to previous state based on what's playing
-            self._return_from_menu()
-
+            self._set_state(self._state_before_menu)
         else:
-            # Open menu
+            self._state_before_menu = state
             self._set_state(AppState.MENU)
             self._menu_selection = 0
 
@@ -200,54 +263,28 @@ class NTSRadioApp:
         if item == "Live Radio":
             self._set_state(AppState.LIVE)
             self._play_current()
-            self._fetch_and_update_live()
+            self._request_live_refresh()
 
         elif item == "Mixtapes":
             self._set_state(AppState.MIXTAPE)
-            if not self._mixtapes:
-                self._mixtapes = self._api.get_mixtapes()
-            self._play_mixtape(self._current_mixtape_idx)
+            if self._mixtapes:
+                self._play_mixtape(self._current_mixtape_idx)
+            else:
+                # Display shows "Loading..."; playback starts on MixtapesFetched
+                self._request_mixtapes()
 
+    def _toggle_live_channel(self):
+        """Switch between live channels 1 and 2."""
+        self._current_channel = 1 if self._current_channel == 2 else 2
 
-    def _return_from_menu(self):
-        """Return to the appropriate screen from menu."""
-        # Determine what to go back to based on what's playing
-        url = self._player.get_current_url() if self._player else None
-        if url and "stream2" in url:
-            self._current_channel = 2
-            self._set_state(AppState.LIVE)
-        elif url and "stream" in url and "mixtape" not in url.lower():
-            self._set_state(AppState.LIVE)
-        elif url:
-            # Check if it's a mixtape URL
-            for i, m in enumerate(self._mixtapes):
-                if m.get("audio_stream_endpoint") == url:
-                    self._current_mixtape_idx = i
-                    self._set_state(AppState.MIXTAPE)
-                    return
-            self._set_state(AppState.LIVE)
-        else:
-            self._set_state(AppState.LIVE)
-
-    def _switch_live_channel(self):
-        """Switch live channel: update display from cache, play in background."""
-        info = self._api.get_channel_info(self._current_channel)
-        if info:
-            self._channel_info = info
-            artwork_url = info.get("artwork_url")
-            if artwork_url:
-                self._current_artwork = self._artwork_cache.get(artwork_url)
+        # Show whatever we already know about the new channel immediately,
+        # before playback (which may block briefly starting mpv)
+        self._channel_info = self._live_infos.get(self._current_channel)
         self._display_dirty = True
+        self._update_display()
 
-        def _bg_switch():
-            self._play_current()
-            self._fetch_and_update_live(force_refresh=True)
-
-        threading.Thread(
-            target=_bg_switch,
-            daemon=True,
-            name="channel-switch",
-        ).start()
+        self._play_current()
+        self._request_live_refresh(force=True)
 
     # ── Playback ─────────────────────────────────────────────
 
@@ -259,50 +296,113 @@ class NTSRadioApp:
 
     def _play_mixtape(self, idx: int):
         """Play a specific mixtape by index."""
-        if 0 <= idx < len(self._mixtapes):
-            mixtape = self._mixtapes[idx]
-            url = self._api.get_mixtape_stream_url(mixtape)
-            if url:
-                self._player.play(url)
-                self._current_mixtape_idx = idx
-                self._display_dirty = True
+        if not (0 <= idx < len(self._mixtapes)):
+            return
+        self._current_mixtape_idx = idx
+        self._display_dirty = True
+        self._update_display()  # render selection before playback starts
 
-    # ── Data fetching ────────────────────────────────────────
+        mixtape = self._mixtapes[idx]
+        url = self._api.get_mixtape_stream_url(mixtape)
+        if url:
+            self._player.play(url)
+            self._display_dirty = True
 
-    def _fetch_and_update_live(self, force_refresh: bool = False):
-        """Fetch live channel info and update artwork."""
-        if force_refresh:
-            self._api.get_live(force_refresh=True)
-        info = self._api.get_channel_info(self._current_channel)
-        if info:
+    # ── Fetch requests (loop thread) ─────────────────────────
+    # Each spawns a worker that does the network I/O and posts the
+    # result back as an event. Guards prevent overlapping fetches.
+
+    def _spawn_worker(self, target, name: str):
+        threading.Thread(target=target, daemon=True, name=name).start()
+
+    def _request_live_refresh(self, force: bool = False):
+        if self._live_fetch_pending:
+            return
+        self._live_fetch_pending = True
+
+        def _worker():
+            infos = {}
+            try:
+                self._api.get_live(force_refresh=force)
+                for ch in LIVE_CHANNELS:
+                    info = self._api.get_channel_info(ch)
+                    if info:
+                        infos[ch] = info
+            except Exception:
+                logger.exception("Live data fetch failed")
+            finally:
+                self._events.put(LiveInfoFetched(infos))
+
+        self._spawn_worker(_worker, "live-fetch")
+
+    def _request_mixtapes(self):
+        if self._mixtapes_fetch_pending:
+            return
+        self._mixtapes_fetch_pending = True
+
+        def _worker():
+            items = []
+            try:
+                items = self._api.get_mixtapes()
+            except Exception:
+                logger.exception("Mixtapes fetch failed")
+            finally:
+                self._events.put(MixtapesFetched(items))
+
+        self._spawn_worker(_worker, "mixtapes-fetch")
+
+    def _request_artwork(self, url: str):
+        if url in self._artwork_pending or url in self._artwork_cache:
+            return
+        self._artwork_pending.add(url)
+
+        def _worker():
+            image = None
+            try:
+                image = self._api.download_artwork(url)
+            except Exception:
+                logger.exception("Artwork fetch failed: %s", url)
+            finally:
+                self._events.put(ArtworkFetched(url, image))
+
+        self._spawn_worker(_worker, "artwork-fetch")
+
+    # ── Fetch results (loop thread) ──────────────────────────
+
+    def _on_live_info(self, infos: dict):
+        self._live_fetch_pending = False
+        self._live_infos.update(infos)
+
+        info = self._live_infos.get(self._current_channel)
+        if info and info != self._channel_info:
             self._channel_info = info
             self._display_dirty = True
 
-            # Fetch artwork in background
-            artwork_url = info.get("artwork_url")
-            if artwork_url and artwork_url not in self._artwork_cache:
-                threading.Thread(
-                    target=self._fetch_artwork,
-                    args=(artwork_url,),
-                    daemon=True,
-                    name="artwork-fetch",
-                ).start()
-            elif artwork_url:
-                self._current_artwork = self._artwork_cache.get(artwork_url)
+        if self._channel_info:
+            artwork_url = self._channel_info.get("artwork_url")
+            if artwork_url:
+                self._request_artwork(artwork_url)
 
-    def _fetch_artwork(self, url: str):
-        """Fetch artwork in a background thread."""
-        img = self._api.download_artwork(url)
-        if img:
-            # Limit cache size to save memory on Pi Zero
-            if len(self._artwork_cache) > 10:
-                # Remove oldest entries
-                oldest = list(self._artwork_cache.keys())[:5]
-                for key in oldest:
-                    del self._artwork_cache[key]
+    def _on_mixtapes(self, items: list):
+        self._mixtapes_fetch_pending = False
+        if items:
+            self._mixtapes = items
+            self._display_dirty = True
+            if self._get_state() == AppState.MIXTAPE:
+                self._play_mixtape(self._current_mixtape_idx)
 
-            self._artwork_cache[url] = img
-            self._current_artwork = img
+    def _on_artwork(self, url: str, image):
+        self._artwork_pending.discard(url)
+        if image is None:
+            return
+
+        # Limit cache size to save memory on Pi Zero
+        if len(self._artwork_cache) > 10:
+            for key in list(self._artwork_cache.keys())[:5]:
+                del self._artwork_cache[key]
+        self._artwork_cache[url] = image
+
+        if self._channel_info and self._channel_info.get("artwork_url") == url:
             self._display_dirty = True
 
     # ── Display update ───────────────────────────────────────
@@ -369,7 +469,8 @@ class NTSRadioApp:
         )
         logger.info("NTS Radio starting up")
 
-        # Register signal handlers
+        # Register signal handlers — they only flip the running flag;
+        # cleanup happens on the loop thread after the loop exits
         signal.signal(signal.SIGTERM, lambda *_: self._signal_handler())
         signal.signal(signal.SIGINT, lambda *_: self._signal_handler())
 
@@ -391,37 +492,49 @@ class NTSRadioApp:
         # Show loading screen
         self._display.render_message("NTS RADIO", "Starting up...")
 
-        # Register button callbacks
-        self._buttons.on_press(BUTTON_A, self._on_button_a)
-        self._buttons.on_press(BUTTON_B, self._on_button_b)
-        self._buttons.on_press(BUTTON_X, self._on_button_x)
-        self._buttons.on_press(BUTTON_Y, self._on_button_y)
+        # Button presses just enqueue events; all logic runs on the loop
+        for pin in (BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Y):
+            self._buttons.on_press(
+                pin, lambda p=pin: self._events.put(ButtonPressed(p))
+            )
         self._buttons.start()
 
-        # Pre-fetch data
-        self._mixtapes = self._api.get_mixtapes()
-        self._fetch_and_update_live()
+        self._running = True
 
-        # Start playing default channel
+        # Start audio first — the stream URL is a constant, no need to
+        # wait on the API before making sound
         self._play_current()
 
-        # Enter main loop
-        self._running = True
-        self._run_loop()
+        # Fetch metadata in the background
+        self._request_live_refresh()
+        self._request_mixtapes()
+
+        try:
+            self._run_loop()
+        finally:
+            self._cleanup()
 
     def _run_loop(self):
-        """Main event loop."""
+        """Main event loop: drain events, check timers, render."""
         last_live_refresh = time.time()
         last_display_refresh = time.time()
 
         while self._running:
             try:
+                event = self._events.get(timeout=TICK_INTERVAL)
+            except queue.Empty:
+                event = None
+
+            try:
+                if event is not None:
+                    self._handle_event(event)
+
                 now = time.time()
 
                 # Periodic live data refresh
                 if now - last_live_refresh >= LIVE_REFRESH_INTERVAL:
                     if self._get_state() == AppState.LIVE:
-                        self._fetch_and_update_live(force_refresh=True)
+                        self._request_live_refresh(force=True)
                     last_live_refresh = now
 
                 # Periodic display refresh (for progress bar)
@@ -433,19 +546,14 @@ class NTSRadioApp:
                 # Update display if needed
                 self._update_display()
 
-                # Sleep to avoid busy-waiting (100ms tick)
-                time.sleep(0.1)
-
             except Exception:
                 logger.exception("Error in main loop")
                 time.sleep(1)  # Back off on error
 
     def _signal_handler(self):
-        """Handle SIGTERM/SIGINT for graceful shutdown."""
+        """Handle SIGTERM/SIGINT: request loop exit, nothing more."""
         logger.info("Signal received, shutting down")
         self._running = False
-        self._cleanup()
-        sys.exit(0)
 
 
 def main():
