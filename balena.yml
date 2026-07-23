@@ -9,6 +9,27 @@ assets:
     type: blob.asset
     data:
       url: "https://github.com/saveriogzz/nts-balena"
+  logo:
+    type: blob.asset
+    data:
+      url: "https://raw.githubusercontent.com/saveriogzz/nts-balena/main/logo.png"
+post-provisioning: |
+  ## Usage
+
+  Attach a [Pimoroni Pirate Audio](https://shop.pimoroni.com/products/pirate-audio-line-out)
+  HAT to the Pi's 40-pin header before powering on. On first boot the device
+  downloads the app, then starts playing NTS channel 1 automatically.
+
+  | Button | Playing | Menu |
+  |--------|---------|------|
+  | A (top-left) | Previous channel/mixtape | Scroll up |
+  | B (bottom-left) | Next channel/mixtape | Scroll down |
+  | X (top-right) | Play/Pause | Select |
+  | Y (bottom-right) | Open menu | Back |
+
+  Defaults can be overridden with the `NTS_DEFAULT_CHANNEL`,
+  `NTS_DISPLAY_BRIGHTNESS`, and `NTS_BUTTON_DEBOUNCE_MS` environment
+  variables in the dashboard.
 data:
   defaultDeviceType: "raspberrypi0-2w-64"
   supportedDeviceTypes:
