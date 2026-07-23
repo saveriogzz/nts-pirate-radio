@@ -141,7 +141,7 @@ class NTSRadioApp:
                 self._current_mixtape_idx = (
                     (self._current_mixtape_idx - 1) % len(self._mixtapes)
                 )
-                self._display_dirty = True
+                self._play_mixtape(self._current_mixtape_idx)
 
         elif state == AppState.MENU:
             # Scroll up in menu
@@ -161,7 +161,7 @@ class NTSRadioApp:
                 self._current_mixtape_idx = (
                     (self._current_mixtape_idx + 1) % len(self._mixtapes)
                 )
-                self._display_dirty = True
+                self._play_mixtape(self._current_mixtape_idx)
 
         elif state == AppState.MENU:
             self._menu_selection = (self._menu_selection + 1) % len(self.MENU_ITEMS)
@@ -206,6 +206,7 @@ class NTSRadioApp:
             self._set_state(AppState.MIXTAPE)
             if not self._mixtapes:
                 self._mixtapes = self._api.get_mixtapes()
+            self._play_mixtape(self._current_mixtape_idx)
 
 
     def _return_from_menu(self):
