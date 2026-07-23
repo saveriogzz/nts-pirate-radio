@@ -3,7 +3,7 @@ type: sw.application
 description: >-
   Stream NTS Radio on a Raspberry Pi Zero 2W with Pimoroni Pirate Audio.
   Supports live channels and infinite mixtapes.
-version: "0.2.0"
+version: "0.3.0"
 assets:
   repository:
     type: blob.asset

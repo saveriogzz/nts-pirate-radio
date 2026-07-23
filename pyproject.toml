@@ -1,6 +1,7 @@
 [project]
 name = "nts-radio"
-version = "0.2.0"
+# Placeholder — the app version lives in balena.yml, nothing consumes this one
+version = "0.0.0"
 description = "Stream NTS Radio (live channels + infinite mixtapes) on a Raspberry Pi with Pimoroni Pirate Audio"
 readme = "README.md"
 license = { file = "LICENSE" }

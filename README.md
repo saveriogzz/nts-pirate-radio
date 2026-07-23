@@ -94,6 +94,8 @@ uv sync
 uv run pytest
 ```
 
+The app version is tracked in one place: the `version` field in `balena.yml`, which balena uses to version releases.
+
 For running on a Pi directly without Balena, `install.sh` and `nts-radio.service` set it up as a systemd service on Raspberry Pi OS.
 
 ## Disclaimer
