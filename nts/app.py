@@ -52,7 +52,7 @@ class NTSRadioApp:
     """Main application class for NTS Radio on Pirate Audio."""
 
     # Menu items
-    MENU_ITEMS = ["Live Radio", "Mixtapes", "Settings"]
+    MENU_ITEMS = ["Live Radio", "Mixtapes"]
 
     def __init__(self):
         self._config = self._load_config()
@@ -209,18 +209,6 @@ class NTSRadioApp:
             if not self._mixtapes:
                 self._mixtapes = self._api.get_mixtapes()
 
-        elif item == "Settings":
-            # Cycle brightness (runtime only; set NTS_DISPLAY_BRIGHTNESS
-            # in Balena device variables for persistence across reboots)
-            brightness = self._config.get("display_brightness", 80)
-            brightness = (brightness + 20) % 120  # 0, 20, 40, 60, 80, 100
-            if brightness == 0:
-                brightness = 20  # Skip fully off
-            self._config["display_brightness"] = brightness
-            self._display.set_brightness(brightness)
-            self._display.render_message("SETTINGS", f"Brightness: {brightness}%")
-            time.sleep(1.0)
-            self._display_dirty = True
 
     def _return_from_menu(self):
         """Return to the appropriate screen from menu."""

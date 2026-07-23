@@ -310,7 +310,7 @@ class Display:
         img, draw = self._new_frame()
 
         # Header
-        status = "▶ LIVE" if is_playing else "⏸ LIVE"
+        status = "> LIVE" if is_playing else "|| LIVE"
         self._draw_header(draw, channel_info.get("channel_name", "NTS"), status)
 
         # Artwork area (centered, below header)
@@ -356,7 +356,7 @@ class Display:
         self._draw_progress_bar(draw, 200, progress, time_remaining)
 
         # Button hints
-        self._draw_button_hints(draw, ["A◀", "B▶", "X⏯", "Y≡"])
+        self._draw_button_hints(draw, ["A<", "B>", "X ||", "Y ="])
 
         self._push_image(img)
 
@@ -376,7 +376,7 @@ class Display:
         img, draw = self._new_frame()
 
         # Header
-        status = "▶ MIX" if is_playing else "⏸ MIX"
+        status = "> MIX" if is_playing else "|| MIX"
         self._draw_header(draw, "MIXTAPE", status)
 
         # Artwork
@@ -424,7 +424,7 @@ class Display:
             draw.text((10, 200), desc, font=self._font_small, fill=MID_GRAY)
 
         # Button hints
-        self._draw_button_hints(draw, ["A◀", "B▶", "X⏯", "Y≡"])
+        self._draw_button_hints(draw, ["A<", "B>", "X ||", "Y ="])
 
         self._push_image(img)
 
@@ -462,7 +462,7 @@ class Display:
                 draw.text((16, y + 8), item, font=self._font_large, fill=LIGHT_GRAY)
 
         # Button hints
-        self._draw_button_hints(draw, ["A▲", "B▼", "X Sel", "Y Back"])
+        self._draw_button_hints(draw, ["A ^", "B v", "X Sel", "Y Back"])
 
         self._push_image(img)
 
