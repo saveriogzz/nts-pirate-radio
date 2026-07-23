@@ -1,4 +1,4 @@
-name: nts-radio
+name: nts-pirate-radio
 type: sw.application
 description: >-
   Stream NTS Radio on a Raspberry Pi Zero 2W with Pimoroni Pirate Audio.
@@ -8,11 +8,11 @@ assets:
   repository:
     type: blob.asset
     data:
-      url: "https://github.com/saveriogzz/nts-balena"
+      url: "https://github.com/saveriogzz/nts-pirate-radio"
   logo:
     type: blob.asset
     data:
-      url: "https://raw.githubusercontent.com/saveriogzz/nts-balena/main/logo.png"
+      url: "https://raw.githubusercontent.com/saveriogzz/nts-pirate-radio/main/logo.png"
 post-provisioning: |
   ## Usage
 
