@@ -37,7 +37,7 @@ DEFAULT_CONFIG = {
 }
 
 # Refresh intervals (seconds)
-LIVE_REFRESH_INTERVAL = 30
+LIVE_REFRESH_INTERVAL = 15
 DISPLAY_REFRESH_INTERVAL = 5  # For progress bar updates
 
 
@@ -250,8 +250,10 @@ class NTSRadioApp:
 
     # ── Data fetching ────────────────────────────────────────
 
-    def _fetch_and_update_live(self):
+    def _fetch_and_update_live(self, force_refresh: bool = False):
         """Fetch live channel info and update artwork."""
+        if force_refresh:
+            self._api.get_live(force_refresh=True)
         info = self._api.get_channel_info(self._current_channel)
         if info:
             self._channel_info = info
@@ -400,7 +402,7 @@ class NTSRadioApp:
                 # Periodic live data refresh
                 if now - last_live_refresh >= LIVE_REFRESH_INTERVAL:
                     if self._get_state() == AppState.LIVE:
-                        self._fetch_and_update_live()
+                        self._fetch_and_update_live(force_refresh=True)
                     last_live_refresh = now
 
                 # Periodic display refresh (for progress bar)
