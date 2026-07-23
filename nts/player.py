@@ -44,6 +44,8 @@ class MPVPlayer:
             "mpv",
             "--no-video",
             "--no-terminal",
+            "--ao=alsa",
+            "--audio-device=alsa/plughw:CARD=sndrpihifiberry,DEV=0",
             f"--input-ipc-server={IPC_SOCKET_PATH}",
             "--idle=no",
             "--cache=yes",
